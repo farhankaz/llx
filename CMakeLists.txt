@@ -5,6 +5,9 @@ set(LLX_VERSION "0.0.1")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Force static library building
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+
 # Find curl package
 find_package(CURL REQUIRED)
 
