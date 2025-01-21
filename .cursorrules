@@ -1,0 +1,62 @@
+# LLX Project Overview
+
+## Functionality
+
+LLX is a Unix-based system utility for interacting with LLM models using llama.cpp. It consists of two main components:
+
+1. llxd (daemon)
+   - Loads and manages an LLM model using llama.cpp
+   - Creates a Unix domain socket at /tmp/llx.sock
+   - Accepts incoming connections and processes LLM queries
+   - Handles clean shutdown on SIGINT/SIGQUIT
+   - Streams generated text back to clients
+
+2. llx (client)
+   - Simple command-line interface for sending prompts
+   - Connects to llxd via Unix domain socket
+   - Streams responses back to user's terminal
+   - Usage: llx "your prompt here"
+
+## Technical Implementation
+
+### Daemon (llxd)
+
+- Uses PIMPL pattern for implementation hiding
+- Manages llama.cpp model lifecycle:
+  - Model loading/unloading
+  - Context management
+  - Token generation
+  - KV cache clearing between queries
+- Threading model:
+  - Main thread for signal handling
+  - Dedicated thread for accepting connections
+  - Synchronous processing of client requests
+- IPC via Unix domain sockets (/tmp/llx.sock)
+
+### Client (llx)
+
+- Simple command-line interface
+- RAII-based socket management
+- Streaming response handling via callback
+- Synchronous communication with daemon
+
+### Build System
+
+- CMake-based build
+- llama.cpp included as submodule
+- C++17 standard required
+- Produces two binaries: llxd and llx
+
+### Error Handling
+
+- Graceful daemon shutdown
+- Socket cleanup on exit
+- Client connection error reporting
+- Model loading validation
+- Token generation error checking
+
+### Dependencies
+
+- llama.cpp (submodule)
+- POSIX-compliant OS
+- C++17 compiler 
