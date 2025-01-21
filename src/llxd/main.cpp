@@ -9,6 +9,10 @@
 #include <curl/curl.h>
 #include <fstream>
 
+#ifndef LLX_VERSION
+#define LLX_VERSION "unknown"
+#endif
+
 namespace fs = std::filesystem;
 
 // Callback function to write downloaded data to file
@@ -52,6 +56,15 @@ void signal_handler(int sig) {
 }
 
 int main(int argc, char** argv) {
+    // Check for version flag first
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--version") {
+            std::cout << "llxd version " << LLX_VERSION << std::endl;
+            return 0;
+        }
+    }
+
     std::string model_path;
     bool debug_mode = false;
     const std::string DEFAULT_MODEL = "Llama-3.2-3B-Instruct-Q4_K_M.gguf";

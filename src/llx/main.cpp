@@ -3,13 +3,23 @@
 #include <string>
 #include <sstream>
 
+#ifndef LLX_VERSION
+#define LLX_VERSION "unknown"
+#endif
+
 void print_usage(const char* program) {
     std::cerr << "Usage: " << program << " \"<prompt>\"" << std::endl;
     std::cerr << "   or: " << program << " (enter multi-line input, terminate with two blank lines)" << std::endl;
+    std::cerr << "   or: " << program << " --version" << std::endl;
     std::cerr << "Example: " << program << " \"What is the capital of France?\"" << std::endl;
 }
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "--version") {
+        std::cout << "llx version " << LLX_VERSION << std::endl;
+        return 0;
+    }
+
     std::string prompt;
 
     if (argc == 1) {

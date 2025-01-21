@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.12)
 project(llx)
 
+set(LLX_VERSION "0.0.1")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -41,6 +42,7 @@ add_executable(llxd
     src/llxd/llxd.cpp
 )
 
+target_compile_definitions(llxd PRIVATE LLX_VERSION="${LLX_VERSION}")
 target_link_libraries(llxd PRIVATE llama llama_common CURL::libcurl)
 target_include_directories(llxd PRIVATE llama.cpp)
 
@@ -48,4 +50,8 @@ target_include_directories(llxd PRIVATE llama.cpp)
 add_executable(llx
     src/llx/main.cpp
     src/llx/llx.cpp
-) 
+)
+
+target_compile_definitions(llx PRIVATE LLX_VERSION="${LLX_VERSION}")
+target_link_libraries(llx PRIVATE llama llama_common CURL::libcurl)
+target_include_directories(llx PRIVATE llama.cpp) 
