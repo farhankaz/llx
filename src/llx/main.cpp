@@ -7,6 +7,12 @@
 #define LLX_VERSION "unknown"
 #endif
 
+// ANSI color codes
+#define COLOR_RESET   "\033[0m"
+#define COLOR_CODE    "\033[38;5;214m"  // Orange for inline code
+#define COLOR_BLOCK   "\033[38;5;111m"  // Light blue for code blocks
+#define COLOR_LANG    "\033[38;5;242m"  // Gray for language tags
+
 void print_usage(const char* program) {
     std::cerr << "Usage: " << program << " \"<prompt>\"" << std::endl;
     std::cerr << "   or: " << program << " (enter multi-line input, terminate with two blank lines)" << std::endl;
@@ -90,7 +96,91 @@ int main(int argc, char** argv) {
 
     // Stream response to stdout
     bool success = client.query(prompt, [](const std::string& text) {
-        std::cout << text << std::flush;
+        static bool in_code_block = false;
+        static bool in_backticks = false;
+        static bool after_backticks = false;
+        static std::string buffer;
+        static std::string language_tag;
+
+        // Process text character by character
+        for (size_t i = 0; i < text.length(); i++) {
+            char c = text[i];
+            buffer += c;
+
+            // Check for code block markers
+            if (buffer.length() >= 3 && buffer.substr(buffer.length() - 3) == "```") {
+                if (!in_code_block) {
+                    // Start of code block
+                    in_code_block = true;
+                    after_backticks = true;
+                    std::cout << "\n" << COLOR_BLOCK << buffer;
+                } else {
+                    // End of code block
+                    in_code_block = false;
+                    std::cout << buffer << COLOR_RESET << "\n";
+                }
+                buffer.clear();
+                continue;
+            }
+
+            // Handle language tag after opening backticks
+            if (after_backticks && !buffer.empty()) {
+                if (buffer.find_first_not_of(" \t\n\r") != std::string::npos) {
+                    language_tag += buffer;
+                    if (buffer.find_first_of(" \t\n\r") != std::string::npos) {
+                        // Output language tag if we have one
+                        if (!language_tag.empty()) {
+                            std::cout << COLOR_LANG << language_tag << COLOR_RESET << "\n";
+                            language_tag.clear();
+                        }
+                        after_backticks = false;
+                    }
+                    buffer.clear();
+                    continue;
+                }
+            }
+
+            // Check for inline code
+            if (!in_code_block && buffer.length() >= 1 && buffer.back() == '`') {
+                if (!in_backticks) {
+                    // Start of inline code
+                    in_backticks = true;
+                    std::cout << COLOR_CODE << buffer;
+                } else {
+                    // End of inline code
+                    in_backticks = false;
+                    std::cout << buffer << COLOR_RESET;
+                }
+                buffer.clear();
+                continue;
+            }
+
+            // Output buffered text if it's getting too long or contains a newline
+            if (buffer.length() > 32 || buffer.find('\n') != std::string::npos) {
+                if (in_code_block) {
+                    std::cout << COLOR_BLOCK << buffer << COLOR_RESET;
+                } else if (in_backticks) {
+                    std::cout << COLOR_CODE << buffer << COLOR_RESET;
+                } else {
+                    std::cout << buffer;
+                }
+                buffer.clear();
+                std::cout << std::flush;
+            }
+        }
+
+        // Output any remaining text
+        if (!buffer.empty()) {
+            if (in_code_block) {
+                std::cout << COLOR_BLOCK << buffer << COLOR_RESET;
+            } else if (in_backticks) {
+                std::cout << COLOR_CODE << buffer << COLOR_RESET;
+            } else {
+                std::cout << buffer;
+            }
+            buffer.clear();
+            std::cout << std::flush;
+        }
     });
 
     if (!success) {

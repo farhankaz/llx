@@ -540,11 +540,11 @@ private:
         // Generate response with better control
         const int max_tokens = 256;  // Limit maximum tokens since commands should be short
         auto* next_logits = new int8_t[1]{1};
-        int64_t t_start_token, t_end_token;
+        int64_t t_start_token = 0;
+        int64_t t_end_token = 0;
         std::string response;
         bool found_newline = false;
         bool found_backticks = false;
-        bool in_backticks = false;
 
         for (int i = 0; i < max_tokens; i++) {
             t_start_token = ggml_time_us();
@@ -556,8 +556,6 @@ private:
             if (new_token == llama_vocab_eos(vocab) || 
                 llama_vocab_is_eog(vocab, new_token) ||
                 (found_newline && (new_token == llama_vocab_bos(vocab) || new_token == llama_vocab_eos(vocab)))) {
-                const char* newline = "\n";
-                send(request.client_fd, newline, 1, 0);
                 break;
             }
 
@@ -576,11 +574,10 @@ private:
             }
             piece_buf[piece_len] = '\0';
             
-            // Track backticks
+            // Track backticks for follow-up prompt logic
             std::string piece(piece_buf, piece_len);
             if (piece.find("```") != std::string::npos) {
                 found_backticks = true;
-                in_backticks = !in_backticks;
             }
 
             // Track if we've seen a newline
@@ -588,7 +585,7 @@ private:
                 found_newline = true;
             }
 
-            // Send piece to client
+            // Send piece to client without any formatting
             ssize_t sent = send(request.client_fd, piece_buf, piece_len, MSG_NOSIGNAL);
             if (sent < 0) {
                 break;
@@ -606,7 +603,7 @@ private:
             }
 
             next_batch.logits = next_logits;
-            next_batch.seq_id = seq_id_ptr_ptr;  // Use pointer to pointer
+            next_batch.seq_id = seq_id_ptr_ptr;
 
             if (llama_decode(ctx, next_batch)) {
                 break;
@@ -618,13 +615,10 @@ private:
 
         // If no backticks found, send follow-up prompt
         if (!found_backticks) {
-            LOG_INFO("%{public}s", "No backticks found in response, sending follow-up prompt");
-            DEBUG_LOG("No backticks found in response, sending follow-up prompt");
-            
             // Create follow-up message
             llama_chat_message assistant_msg;
             assistant_msg.role = "assistant";
-            assistant_msg.content = response.c_str();  // Convert string to const char*
+            assistant_msg.content = response.c_str();
             messages.push_back(assistant_msg);
 
             llama_chat_message followup_msg;
@@ -690,7 +684,6 @@ private:
             response.clear();
             found_newline = false;
             found_backticks = false;
-            in_backticks = false;
 
             for (int i = 0; i < max_tokens; i++) {
                 t_start_token = ggml_time_us();
@@ -699,7 +692,6 @@ private:
                 if (new_token == llama_vocab_eos(vocab) || 
                     llama_vocab_is_eog(vocab, new_token) ||
                     (found_newline && (new_token == llama_vocab_bos(vocab) || new_token == llama_vocab_eos(vocab)))) {
-                    send(request.client_fd, newline, 1, 0);
                     break;
                 }
 
@@ -713,13 +705,13 @@ private:
                 std::string piece(piece_buf, piece_len);
                 if (piece.find("```") != std::string::npos) {
                     found_backticks = true;
-                    in_backticks = !in_backticks;
                 }
 
                 if (strchr(piece_buf, '\n') != nullptr) {
                     found_newline = true;
                 }
 
+                // Send piece to client without any formatting
                 ssize_t sent = send(request.client_fd, piece_buf, piece_len, MSG_NOSIGNAL);
                 if (sent < 0) {
                     break;
@@ -734,7 +726,7 @@ private:
                 }
 
                 next_batch.logits = next_logits;
-                next_batch.seq_id = seq_id_ptr_ptr;  // Use pointer to pointer
+                next_batch.seq_id = seq_id_ptr_ptr;
 
                 if (llama_decode(ctx, next_batch)) {
                     break;
