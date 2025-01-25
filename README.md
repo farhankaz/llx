@@ -1,4 +1,4 @@
-# LLX - Local Inference Terminal Command For Apple Silicone Macs
+# LLX - Local Inference in the Terminal For Apple Silicone Macs
 
 `llx` is a utlity for Apple Silicone Macs for fast LLM text generation in the terminal. `llx` uses llama.cpp with native Metal GPU acceleration, offering low-latency command and script generation without leaving your terminal.  Downloads and uses llama 3.2 3B model by default, but another model can be used.
 
@@ -18,7 +18,7 @@ llx "Kill all processes using port 8080"
 # Show version
 llx --version
 
-# Shutdown the daemon
+# Shutdown the daemon, normally auto starts when needed
 llx --shutdown
 ```
 
