@@ -4,6 +4,7 @@
 #include "common/common.h"
 #include "llama-chat.h"
 #include "prompts.h"
+#include "protocol.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -19,13 +20,15 @@
 #include <errno.h>
 #include <sstream>
 #include <iomanip>
+#include <arpa/inet.h>
 
 #define DEBUG_LOG(x) if (debug_mode_) { std::cout << "[DEBUG] " << x << std::endl; }
 
 // Request structure to hold client request data
 struct Request {
     int client_fd;
-    std::string prompt;
+    llxd_protocol::MessageType type;
+    std::string payload;
 };
 
 // Metrics structure to track performance
@@ -187,18 +190,30 @@ public:
     }
 
     void stop() {
+        std::cout << "Initiating daemon shutdown sequence..." << std::endl;
+        
+        // First set running flag to false to stop accepting new requests
         running_ = false;
         
-        // Wake up worker thread
+        // Close socket to interrupt accept() call
+        if (socket_fd_ >= 0) {
+            std::cout << "Closing socket connections..." << std::endl;
+            shutdown(socket_fd_, SHUT_RDWR);
+            close(socket_fd_);
+            socket_fd_ = -1;
+            unlink("/tmp/llx.sock");
+        }
+
+        // Wake up worker thread and wait for it to finish
         {
+            std::cout << "Stopping worker thread..." << std::endl;
             std::unique_lock<std::mutex> lock(queue_mutex_);
+            // Add a final null request to ensure the worker thread wakes up
+            request_queue_.push({-1, llxd_protocol::MessageType::CONTROL, ""});
             queue_condition_.notify_one();
         }
         
-        if (socket_fd_ >= 0) {
-            close(socket_fd_);
-        }
-        
+        std::cout << "Waiting for threads to finish..." << std::endl;
         if (accept_thread_.joinable()) {
             accept_thread_.join();
         }
@@ -206,12 +221,16 @@ public:
         if (worker_thread_.joinable()) {
             worker_thread_.join();
         }
-        
+
+        std::cout << "Cleaning up resources..." << std::endl;
         if (model_) {
             llama_model_free(model_);
+            model_ = nullptr;
         }
         
         llama_backend_free();
+        std::cout << "Daemon shutdown complete" << std::endl;
+        exit(0);  // Force exit after cleanup
     }
 
 private:
@@ -220,28 +239,59 @@ private:
             int client_fd = accept(socket_fd_, nullptr, nullptr);
             if (client_fd < 0) {
                 if (running_) {
-                    std::cerr << "Failed to accept connection" << std::endl;
+                    if (errno == EINVAL) {
+                        // Socket was closed, exit the loop
+                        DEBUG_LOG("Socket closed, stopping accept loop");
+                        break;
+                    }
+                    std::cerr << "Failed to accept connection: " << strerror(errno) << std::endl;
                 }
                 continue;
             }
 
-            // Read the prompt
-            char buffer[4096];
-            ssize_t n = read(client_fd, buffer, sizeof(buffer) - 1);
-            if (n <= 0) {
-                std::cerr << "Failed to read prompt from client" << std::endl;
+            // Read message header
+            llxd_protocol::MessageHeader header;
+            ssize_t header_size = read(client_fd, &header, sizeof(header));
+            if (header_size != sizeof(header)) {
+                std::cerr << "Failed to read message header" << std::endl;
                 close(client_fd);
                 continue;
             }
-            buffer[n] = '\0';
+
+            DEBUG_LOG("Received message type: " << (header.type == llxd_protocol::MessageType::CONTROL ? "CONTROL" : "PROMPT"));
+
+            // Read payload
+            uint32_t payload_size = ntohl(header.payload_size);
+            std::string payload;
+            payload.resize(payload_size);
+            
+            ssize_t n = read(client_fd, &payload[0], payload_size);
+            if (n != static_cast<ssize_t>(payload_size)) {
+                std::cerr << "Failed to read payload" << std::endl;
+                close(client_fd);
+                continue;
+            }
+
+            if (header.type == llxd_protocol::MessageType::CONTROL) {
+                DEBUG_LOG("Control message payload size: " << payload_size);
+            }
 
             // Queue the request
             {
                 std::unique_lock<std::mutex> lock(queue_mutex_);
-                request_queue_.push({client_fd, std::string(buffer)});
+                request_queue_.push({client_fd, header.type, payload});
                 queue_condition_.notify_one();
             }
+
+            // If this was a shutdown request, exit the accept loop
+            if (header.type == llxd_protocol::MessageType::CONTROL && 
+                payload_size >= sizeof(llxd_protocol::ControlCommand) &&
+                *reinterpret_cast<const llxd_protocol::ControlCommand*>(payload.data()) == llxd_protocol::ControlCommand::SHUTDOWN) {
+                DEBUG_LOG("Shutdown request received, stopping accept loop");
+                break;
+            }
         }
+        DEBUG_LOG("Accept loop stopped");
     }
 
     void process_requests() {
@@ -267,7 +317,36 @@ private:
         }
     }
 
-        void handle_request(const Request& request) {
+    void handle_request(const Request& request) {
+        // Handle control messages
+        if (request.type == llxd_protocol::MessageType::CONTROL) {
+            if (request.client_fd == -1) {
+                // This is our shutdown sentinel request
+                return;
+            }
+
+            std::cout << "Processing control message..." << std::endl;
+            
+            if (request.payload.size() >= sizeof(llxd_protocol::ControlCommand)) {
+                llxd_protocol::ControlCommand cmd = *reinterpret_cast<const llxd_protocol::ControlCommand*>(request.payload.data());
+                if (cmd == llxd_protocol::ControlCommand::SHUTDOWN) {
+                    std::cout << "Received shutdown command. Initiating shutdown..." << std::endl;
+                    const char* response = "Shutting down llxd daemon...\n";
+                    send(request.client_fd, response, strlen(response), MSG_NOSIGNAL);
+                    close(request.client_fd);
+                    
+                    // Call stop() in a separate thread to avoid deadlock
+                    std::thread([this]() {
+                        stop();
+                    }).detach();
+                    return;
+                }
+            }
+            close(request.client_fd);
+            return;
+        }
+
+        // Handle prompt messages
         metrics_.on_request_start();
         int64_t t_start_prompt = ggml_time_us();
 
@@ -334,7 +413,7 @@ private:
         // Add user message
         llama_chat_message user_msg;
         user_msg.role = "user";
-        user_msg.content = request.prompt.c_str();
+        user_msg.content = request.payload.c_str();
         messages.push_back(user_msg);
 
         // Convert messages to prompt using template
@@ -521,7 +600,7 @@ private:
         common_sampler_free(sampler);
         llama_free(ctx);
         metrics_.on_request_end();
-    }  // Implementation continues...
+    }
 
     std::string model_path_;
     std::atomic<bool> running_;

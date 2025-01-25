@@ -1,10 +1,12 @@
 #include "llx.h"
+#include "../llxd/protocol.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include <iostream>
 #include <cstring>
+#include <arpa/inet.h>
 
 class llx::Impl {
 public:
@@ -44,10 +46,17 @@ public:
             return false;
         }
 
-        // Send the prompt
-        ssize_t sent = send(socket_fd_, prompt.c_str(), prompt.length(), 0);
-        if (sent != static_cast<ssize_t>(prompt.length())) {
-            std::cerr << "Failed to send prompt" << std::endl;
+        // Prepare and send message header
+        llxd_protocol::MessageHeader header;
+        header.type = llxd_protocol::MessageType::PROMPT;
+        header.payload_size = htonl(prompt.length());  // Convert to network byte order
+
+        if (!send_all(&header, sizeof(header))) {
+            return false;
+        }
+
+        // Send prompt
+        if (!send_all(prompt.c_str(), prompt.length())) {
             return false;
         }
 
@@ -65,7 +74,59 @@ public:
         return true;
     }
 
+    bool shutdown() {
+        if (socket_fd_ < 0) {
+            std::cerr << "Not connected to daemon" << std::endl;
+            return false;
+        }
+
+        // Prepare and send message header
+        llxd_protocol::MessageHeader header;
+        header.type = llxd_protocol::MessageType::CONTROL;
+        header.payload_size = htonl(sizeof(llxd_protocol::ControlCommand));
+
+        if (!send_all(&header, sizeof(header))) {
+            return false;
+        }
+
+        // Send shutdown command
+        llxd_protocol::ControlCommand cmd = llxd_protocol::ControlCommand::SHUTDOWN;
+        if (!send_all(&cmd, sizeof(cmd))) {
+            return false;
+        }
+
+        // Read confirmation response
+        char buffer[4096];
+        ssize_t n = read(socket_fd_, buffer, sizeof(buffer) - 1);
+        if (n > 0) {
+            buffer[n] = '\0';
+            std::cout << buffer;
+        }
+
+        // Close socket
+        close(socket_fd_);
+        socket_fd_ = -1;
+
+        return true;
+    }
+
 private:
+    bool send_all(const void* data, size_t len) {
+        const char* ptr = static_cast<const char*>(data);
+        size_t remaining = len;
+
+        while (remaining > 0) {
+            ssize_t sent = send(socket_fd_, ptr, remaining, MSG_NOSIGNAL);
+            if (sent <= 0) {
+                std::cerr << "Failed to send data" << std::endl;
+                return false;
+            }
+            ptr += sent;
+            remaining -= sent;
+        }
+        return true;
+    }
+
     int socket_fd_;
 };
 
@@ -78,4 +139,8 @@ bool llx::connect() {
 
 bool llx::query(const std::string& prompt, ResponseCallback callback) {
     return impl->query(prompt, callback);
+}
+
+bool llx::shutdown() {
+    return impl->shutdown();
 } 

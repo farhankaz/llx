@@ -19,6 +19,9 @@ public:
     // Send a prompt and receive streamed response
     bool query(const std::string& prompt, ResponseCallback callback);
 
+    // Send shutdown command to daemon
+    bool shutdown();
+
 private:
     class Impl;
     std::unique_ptr<Impl> impl;

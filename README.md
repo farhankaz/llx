@@ -4,7 +4,7 @@
 
 ### Usage
 
-Make sure the `llxd` daemon is started (see below).Basic usage for system tasks:
+Make sure the `llxd` daemon is started (see below). Basic usage for system tasks:
 ```bash
 llx "Find all Python files containing the word 'deprecated' in the current directory"
 # Outputs: find . -name "*.py" -type f -exec grep -l "deprecated" {} \;
@@ -14,6 +14,12 @@ llx "Show disk usage of subdirectories in /usr, sorted by size"
 
 llx "Kill all processes using port 8080"
 # Outputs: lsof -ti:8080 | xargs kill -9
+
+# Show version
+llx --version
+
+# Shutdown the daemon
+llx --shutdown
 ```
 
 ### Advanced Usage
@@ -47,4 +53,9 @@ This will automatically download and use the Llama 3.2 3B parameter model.
 Using a custom model:
 ```bash
 llxd -m /path/to/your/model.gguf
+```
+
+The daemon can be stopped gracefully using:
+```bash
+llx --shutdown
 ```
