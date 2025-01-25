@@ -5,6 +5,7 @@
 #include "llama-chat.h"
 #include "prompts.h"
 #include "protocol.h"
+#include "logging.h"  // Add the new logging header
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -21,8 +22,18 @@
 #include <sstream>
 #include <iomanip>
 #include <arpa/inet.h>
+#include <os/log.h>  // macOS system logging
 
-#define DEBUG_LOG(x) if (debug_mode_) { std::cout << "[DEBUG] " << x << std::endl; }
+// System logger
+static os_log_t logger = nullptr;
+
+// Initialize logger
+static void init_logger() {
+    if (!logger) {
+        // Create a persistent subsystem identifier
+        logger = os_log_create("com.llx.daemon", OS_LOG_CATEGORY_INIT("llxd"));
+    }
+}
 
 // Request structure to hold client request data
 struct Request {
@@ -122,11 +133,14 @@ public:
         , debug_mode_(debug_mode)
         , socket_fd_(-1)
         , model_(nullptr) {
+        init_logger();  // Initialize system logger
         metrics_.init();
+        LOG_INFO("%{public}s", ("Initializing daemon with model: " + model_path).c_str());
         DEBUG_LOG("Initializing daemon with model: " << model_path);
     }
 
     bool start() {
+        LOG_INFO("%{public}s", "Starting daemon initialization");
         DEBUG_LOG("Starting daemon initialization");
         
         // Initialize llama.cpp
@@ -190,6 +204,7 @@ public:
     }
 
     void stop() {
+        LOG_INFO("%{public}s", "Initiating daemon shutdown sequence...");
         std::cout << "Initiating daemon shutdown sequence..." << std::endl;
         
         // First set running flag to false to stop accepting new requests
@@ -361,6 +376,9 @@ private:
             }
         } client_guard(request.client_fd);
 
+        LOG_INFO("%{public}s", ("Processing LLM request: " + request.payload).c_str());
+        DEBUG_LOG("Processing LLM request: " << request.payload);
+
         // Create optimized context parameters for this request
         llama_context_params ctx_params = llama_context_default_params();
         ctx_params.n_ctx = 2048;      // Keep context size reasonable
@@ -441,7 +459,6 @@ private:
         }
         DEBUG_LOG("Applied chat template successfully. Prompt size: " << formatted_prompt.size());
         DEBUG_LOG("Formatted prompt:\n" << formatted_prompt);
-
 
         // Get vocab for tokenization
         const llama_vocab* vocab = llama_model_get_vocab(model_);
@@ -526,6 +543,8 @@ private:
         int64_t t_start_token, t_end_token;
         std::string response;
         bool found_newline = false;
+        bool found_backticks = false;
+        bool in_backticks = false;
 
         for (int i = 0; i < max_tokens; i++) {
             t_start_token = ggml_time_us();
@@ -557,6 +576,13 @@ private:
             }
             piece_buf[piece_len] = '\0';
             
+            // Track backticks
+            std::string piece(piece_buf, piece_len);
+            if (piece.find("```") != std::string::npos) {
+                found_backticks = true;
+                in_backticks = !in_backticks;
+            }
+
             // Track if we've seen a newline
             if (strchr(piece_buf, '\n') != nullptr) {
                 found_newline = true;
@@ -568,8 +594,8 @@ private:
                 break;
             }
 
-            // Collect response for logging
-            response += std::string(piece_buf, piece_len);
+            // Collect response for validation
+            response += piece;
 
             // Accept token and prepare next batch
             common_sampler_accept(sampler, new_token, true);
@@ -580,9 +606,7 @@ private:
             }
 
             next_batch.logits = next_logits;
-            static llama_seq_id seq_id = 0;
-            static llama_seq_id* seq_id_ptr = &seq_id;
-            next_batch.seq_id = &seq_id_ptr;
+            next_batch.seq_id = seq_id_ptr_ptr;  // Use pointer to pointer
 
             if (llama_decode(ctx, next_batch)) {
                 break;
@@ -592,8 +616,139 @@ private:
             metrics_.on_token_generated(t_start_token, t_end_token);
         }
 
+        // If no backticks found, send follow-up prompt
+        if (!found_backticks) {
+            LOG_INFO("%{public}s", "No backticks found in response, sending follow-up prompt");
+            DEBUG_LOG("No backticks found in response, sending follow-up prompt");
+            
+            // Create follow-up message
+            llama_chat_message assistant_msg;
+            assistant_msg.role = "assistant";
+            assistant_msg.content = response.c_str();  // Convert string to const char*
+            messages.push_back(assistant_msg);
+
+            llama_chat_message followup_msg;
+            followup_msg.role = "user";
+            followup_msg.content = "Please reformat the above response to enclose the command in ```bash backticks.";
+            messages.push_back(followup_msg);
+
+            // Convert messages to prompt
+            msg_ptrs.clear();
+            for (const auto& msg : messages) {
+                msg_ptrs.push_back(&msg);
+            }
+
+            // Apply template and generate reformatted response
+            formatted_prompt.clear();
+            if (llm_chat_apply_template(chat_template, msg_ptrs, formatted_prompt, true) < 0) {
+                std::cerr << "Failed to apply chat template for follow-up" << std::endl;
+                llama_free(ctx);
+                metrics_.on_request_end();
+                return;
+            }
+
+            // Send newline before follow-up response
+            const char* newline = "\n";
+            send(request.client_fd, newline, 1, MSG_NOSIGNAL);
+
+            // Tokenize and process follow-up prompt
+            tokens.clear();
+            tokens.resize(formatted_prompt.length() + 1);
+            n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), 
+                                    tokens.data(), tokens.size(), true, true);
+            if (n_tokens < 0) {
+                std::cerr << "Failed to tokenize follow-up prompt" << std::endl;
+                llama_free(ctx);
+                metrics_.on_request_end();
+                return;
+            }
+            tokens.resize(n_tokens);
+
+            // Process follow-up response
+            batch = llama_batch_get_one(tokens.data(), tokens.size());
+            if (!batch.token) {
+                std::cerr << "Failed to create batch for follow-up" << std::endl;
+                llama_free(ctx);
+                metrics_.on_request_end();
+                return;
+            }
+
+            logits_array = new int8_t[batch.n_tokens]();
+            logits_array[batch.n_tokens - 1] = 1;
+            batch.logits = logits_array;
+
+            if (llama_decode(ctx, batch)) {
+                std::cerr << "Failed to evaluate follow-up prompt" << std::endl;
+                delete[] logits_array;
+                llama_free(ctx);
+                metrics_.on_request_end();
+                return;
+            }
+            delete[] logits_array;
+
+            // Generate follow-up response
+            response.clear();
+            found_newline = false;
+            found_backticks = false;
+            in_backticks = false;
+
+            for (int i = 0; i < max_tokens; i++) {
+                t_start_token = ggml_time_us();
+                llama_token new_token = common_sampler_sample(sampler, ctx, -1);
+
+                if (new_token == llama_vocab_eos(vocab) || 
+                    llama_vocab_is_eog(vocab, new_token) ||
+                    (found_newline && (new_token == llama_vocab_bos(vocab) || new_token == llama_vocab_eos(vocab)))) {
+                    send(request.client_fd, newline, 1, 0);
+                    break;
+                }
+
+                char piece_buf[32];
+                int piece_len = llama_token_to_piece(vocab, new_token, piece_buf, sizeof(piece_buf), 0, true);
+                if (piece_len < 0 || piece_len >= (int)sizeof(piece_buf)) {
+                    break;
+                }
+                piece_buf[piece_len] = '\0';
+
+                std::string piece(piece_buf, piece_len);
+                if (piece.find("```") != std::string::npos) {
+                    found_backticks = true;
+                    in_backticks = !in_backticks;
+                }
+
+                if (strchr(piece_buf, '\n') != nullptr) {
+                    found_newline = true;
+                }
+
+                ssize_t sent = send(request.client_fd, piece_buf, piece_len, MSG_NOSIGNAL);
+                if (sent < 0) {
+                    break;
+                }
+
+                response += piece;
+                common_sampler_accept(sampler, new_token, true);
+
+                llama_batch next_batch = llama_batch_get_one(&new_token, 1);
+                if (!next_batch.token) {
+                    break;
+                }
+
+                next_batch.logits = next_logits;
+                next_batch.seq_id = seq_id_ptr_ptr;  // Use pointer to pointer
+
+                if (llama_decode(ctx, next_batch)) {
+                    break;
+                }
+
+                t_end_token = ggml_time_us();
+                metrics_.on_token_generated(t_start_token, t_end_token);
+            }
+        }
+
         // Log complete response
-        DEBUG_LOG("Complete LLM response for request:\n" << response);
+        std::string log_response = "Complete LLM response for request:\n" + response;
+        LOG_INFO("%{public}s", log_response.c_str());
+        DEBUG_LOG(log_response);
 
         // Cleanup
         delete[] next_logits;
@@ -614,6 +769,9 @@ private:
     std::mutex queue_mutex_;
     std::condition_variable queue_condition_;
     Metrics metrics_;
+    llama_seq_id seq_id = 0;  // The sequence ID value
+    llama_seq_id* seq_id_ptr = &seq_id;  // Pointer to the sequence ID
+    llama_seq_id** seq_id_ptr_ptr = &seq_id_ptr;  // Pointer to the pointer
 };
 
 llxd::llxd(const std::string& model_path, bool debug_mode)
