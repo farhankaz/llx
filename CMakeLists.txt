@@ -46,15 +46,16 @@ add_executable(llxd
 )
 
 target_compile_definitions(llxd PRIVATE LLX_VERSION="${LLX_VERSION}")
-target_link_libraries(llxd PRIVATE llama llama_common CURL::libcurl)
+target_link_libraries(llxd PRIVATE llama_common CURL::libcurl)
 target_include_directories(llxd PRIVATE llama.cpp)
 
 # llx executable
 add_executable(llx
     src/llx/main.cpp
     src/llx/llx.cpp
+    src/llx/daemon_manager.cpp
 )
 
 target_compile_definitions(llx PRIVATE LLX_VERSION="${LLX_VERSION}")
-target_link_libraries(llx PRIVATE llama llama_common CURL::libcurl)
+target_link_libraries(llx PRIVATE llama_common CURL::libcurl)
 target_include_directories(llx PRIVATE llama.cpp) 

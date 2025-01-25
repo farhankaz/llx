@@ -83,8 +83,8 @@ int main(int argc, char** argv) {
     }
 
     llx client;
-    if (!client.connect()) {
-        std::cerr << "Failed to connect to llxd. Make sure the daemon is running." << std::endl;
+    if (!client.connect(true, false)) {  // Enable auto-start, disable debug mode
+        std::cerr << "Failed to connect to llxd and auto-start failed" << std::endl;
         return 1;
     }
 

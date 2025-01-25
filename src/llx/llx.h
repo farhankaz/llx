@@ -13,8 +13,8 @@ public:
     llx();
     ~llx();
 
-    // Connect to the llxd daemon
-    bool connect();
+    // Connect to the llxd daemon, optionally auto-starting it if not running
+    bool connect(bool auto_start = true, bool debug_mode = false);
 
     // Send a prompt and receive streamed response
     bool query(const std::string& prompt, ResponseCallback callback);

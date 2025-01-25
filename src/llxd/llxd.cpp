@@ -380,7 +380,7 @@ private:
 
         // Detect chat template
         std::string model_template;
-        const char* raw_template = llama_model_chat_template(model_);
+        const char* raw_template = llama_model_chat_template(model_, "chatml");  // Use ChatML as default template
         if (raw_template != nullptr) {
             model_template = raw_template;
         }

@@ -1,4 +1,5 @@
 #include "llx.h"
+#include "daemon_manager.h"
 #include "../llxd/protocol.h"
 
 #include <sys/socket.h>
@@ -10,7 +11,7 @@
 
 class llx::Impl {
 public:
-    Impl() : socket_fd_(-1) {}
+    Impl() : socket_fd_(-1), daemon_manager_() {}
 
     ~Impl() {
         if (socket_fd_ >= 0) {
@@ -18,7 +19,20 @@ public:
         }
     }
 
-    bool connect() {
+    bool connect(bool auto_start, bool debug_mode) {
+        // Check if daemon is running
+        if (!daemon_manager_.is_running()) {
+            if (!auto_start) {
+                std::cerr << "Daemon not running and auto-start disabled" << std::endl;
+                return false;
+            }
+
+            // Try to start daemon
+            if (!daemon_manager_.start_daemon(debug_mode)) {
+                return false;
+            }
+        }
+
         socket_fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
         if (socket_fd_ < 0) {
             std::cerr << "Failed to create socket" << std::endl;
@@ -128,13 +142,14 @@ private:
     }
 
     int socket_fd_;
+    DaemonManager daemon_manager_;
 };
 
 llx::llx() : impl(std::make_unique<Impl>()) {}
 llx::~llx() = default;
 
-bool llx::connect() {
-    return impl->connect();
+bool llx::connect(bool auto_start, bool debug_mode) {
+    return impl->connect(auto_start, debug_mode);
 }
 
 bool llx::query(const std::string& prompt, ResponseCallback callback) {
