@@ -1,3 +1,7 @@
+# Instructions
+- Make sure to run compile for any changes using `cmake --build ./build`, and confirm success.  
+- Fix any compile errors, and make sure to run `cmake --build ./build` again.
+
 # LLX Project Overview
 
 ## Functionality
