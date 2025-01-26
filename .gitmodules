@@ -1,3 +1,6 @@
 [submodule "llama.cpp"]
 	path = llama.cpp
 	url = https://github.com/ggerganov/llama.cpp.git
+[submodule "build/homebrew-tap"]
+	path = build/homebrew-tap
+	url = https://github.com/farhankaz/homebrew-tap.git
