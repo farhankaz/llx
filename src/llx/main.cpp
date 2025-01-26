@@ -1,4 +1,5 @@
 #include "llx.h"
+#include "daemon_manager.h"
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -19,6 +20,14 @@ void print_usage(const char* program) {
     std::cerr << "   or: " << program << " --version" << std::endl;
     std::cerr << "   or: " << program << " --shutdown" << std::endl;
     std::cerr << "Example: " << program << " \"What is the capital of France?\"" << std::endl;
+}
+
+bool ensure_daemon_running() {
+    DaemonManager daemon_manager;
+    if (daemon_manager.is_running()) {
+        return true;
+    }
+    return daemon_manager.ensure_running();
 }
 
 int main(int argc, char** argv) {
@@ -88,9 +97,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Ensure daemon is running before creating client
+    if (!ensure_daemon_running()) {
+        std::cerr << "Failed to start daemon" << std::endl;
+        return 1;
+    }
+
     llx client;
-    if (!client.connect(true, false)) {  // Enable auto-start, disable debug mode
-        std::cerr << "Failed to connect to llxd and auto-start failed" << std::endl;
+    if (!client.connect()) {
+        std::cerr << "Failed to connect to llxd" << std::endl;
         return 1;
     }
 

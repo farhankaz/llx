@@ -2,6 +2,14 @@
 
 `llx` is a utlity for Apple Silicone Macs for fast LLM text generation in the terminal. `llx` uses llama.cpp with native Metal GPU acceleration, offering low-latency command and script generation without leaving your terminal.  Downloads and uses llama 3.2 3B model by default, but another model can be used.
 
+### Dependencies
+
+- **llama.cpp**: Required for LLM model loading and inference. Included as a Git submodule.
+- **libcurl**: Required for downloading models. Install via Homebrew on macOS:
+  ```bash
+  brew install curl
+  ```
+
 ### Usage
 
 Basic usage for system tasks:

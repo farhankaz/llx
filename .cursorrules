@@ -62,5 +62,6 @@ LLX is a Unix-based system utility for interacting with LLM models using llama.c
 ### Dependencies
 
 - llama.cpp (submodule)
+- libcurl (required for model downloads)
 - POSIX-compliant OS
 - C++17 compiler 

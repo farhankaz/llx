@@ -2,21 +2,21 @@
 #define LLX_H
 
 #include <string>
-#include <functional>
 #include <memory>
+#include <functional>
 
 class llx {
 public:
     // Callback type for receiving streamed responses
-    using ResponseCallback = std::function<void(const std::string& text)>;
+    using ResponseCallback = std::function<void(const std::string&)>;
 
     llx();
     ~llx();
 
-    // Connect to the llxd daemon, optionally auto-starting it if not running
-    bool connect(bool auto_start = true, bool debug_mode = false);
+    // Connect to the daemon
+    bool connect();
 
-    // Send a prompt and receive streamed response
+    // Send a prompt and receive response
     bool query(const std::string& prompt, ResponseCallback callback);
 
     // Send shutdown command to daemon
