@@ -4,3 +4,6 @@
 [submodule "build/homebrew-tap"]
 	path = build/homebrew-tap
 	url = https://github.com/farhankaz/homebrew-tap.git
+[submodule "homebrew-tap"]
+	path = homebrew-tap
+	url = https://github.com/farhankaz/homebrew-tap.git
