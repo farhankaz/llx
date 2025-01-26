@@ -11,6 +11,8 @@ fi
 VERSION=$1
 TAG="v${VERSION}"
 REPO="farhankaz/llx"
+TAP_REPO="homebrew-tap"
+FORMULA_PATH="${TAP_REPO}/Formula/llx.rb"
 ARCHIVE_URL="https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
 
 # Ensure we're on main branch
@@ -19,6 +21,12 @@ git checkout main
 # Ensure working directory is clean
 if [ -n "$(git status --porcelain)" ]; then
     echo "Error: Working directory is not clean. Please commit or stash changes."
+    exit 1
+fi
+
+# Ensure tap repo exists as submodule
+if [ ! -d "${TAP_REPO}" ]; then
+    echo "Error: ${TAP_REPO} directory not found. Please set up the tap repository as a submodule first."
     exit 1
 fi
 
@@ -49,14 +57,20 @@ fi
 echo "SHA256 hash: ${HASH}"
 
 # Update Homebrew formula
-sed -i '' "s/sha256 \".*\"/sha256 \"${HASH}\"/" llx.rb
+sed -i '' "s/sha256 \".*\"/sha256 \"${HASH}\"/" "${FORMULA_PATH}"
+
+# Commit and push changes to tap repository
+(cd "${TAP_REPO}" && \
+    git add Formula/llx.rb && \
+    git commit -m "Update llx to ${TAG}" && \
+    git push)
+
+# Update the submodule reference in the main repository
+git add "${TAP_REPO}"
+git commit -m "Update tap submodule to ${TAG}"
+git push
 
 echo "Release ${TAG} created successfully!"
-echo "Next steps:"
-echo "1. Create a new repository named 'homebrew-tap' if you haven't already"
-echo "2. Copy the updated llx.rb to your homebrew-tap repository"
-echo "3. Push the changes to GitHub"
-echo ""
-echo "Users can then install using:"
+echo "Users can install using:"
 echo "brew tap ${REPO%/*}/tap"
 echo "brew install llx" 
