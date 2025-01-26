@@ -48,6 +48,8 @@ add_library(llama_common STATIC
     llama.cpp/common/log.cpp
     llama.cpp/common/console.cpp
     llama.cpp/common/arg.cpp
+    llama.cpp/common/ngram-cache.cpp
+    llama.cpp/common/speculative.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/build-info.cpp
 )
 target_include_directories(llama_common PUBLIC llama.cpp)
