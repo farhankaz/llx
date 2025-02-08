@@ -66,6 +66,11 @@ public:
     }
 
     fs::path get_models_directory() const {
+        const char* env_models_dir = std::getenv("LLX_MODELS_DIR");
+        if (env_models_dir != nullptr && strlen(env_models_dir) > 0) {
+            return fs::path(env_models_dir);
+        }
+        
         const char* home = std::getenv("HOME");
         if (!home) return fs::current_path() / "models";
         return fs::path(home) / ".cache" / "llx" / "models";
@@ -274,4 +279,4 @@ DaemonManager::~DaemonManager() = default;
 bool DaemonManager::is_running() const { return impl->is_running(); }
 bool DaemonManager::ensure_running(const std::optional<std::string>& model_id) { return impl->ensure_running(model_id); }
 fs::path DaemonManager::get_daemon_path() const { return impl->get_daemon_path(); }
-fs::path DaemonManager::get_default_model_path() const { return impl->get_model_path("TheBloke/Llama-3.2-3B-Instruct-GGUF"); } 
+fs::path DaemonManager::get_default_model_path() const { return impl->get_model_path("TheBloke/Llama-3.2-3B-Instruct-GGUF"); }
