@@ -13,7 +13,7 @@
 Install `llx` using Homebrew:
 ```bash
 brew tap farhankaz/tap
-brew install llx
+brew install --HEAD llx
 ```
 
  The tool will automatically download the default Granite-3.1 2B Instruct model on first use.
