@@ -4,7 +4,7 @@
 
 ### System Requirements
 
-- Apple Silicon Mac (M1/M2/M3)
+- Apple Silicon Mac (M1/M2/M3/M4)
 - macOS Ventura or later
 - ~4GB disk space for the default model
 
@@ -13,7 +13,7 @@
 Install `llx` using Homebrew:
 ```bash
 brew tap farhankaz/tap
-brew install --HEAD llx
+brew install llx
 ```
 
  The tool will automatically download the default Granite-3.1 2B Instruct model on first use.
