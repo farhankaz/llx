@@ -57,6 +57,9 @@ The daemon can be stopped gracefully using:
 ```bash
 llx --shutdown
 ```
+## License
+
+MIT: https://opensource.org/license/mit
 
 ### Model Download Path
 By default the Granite-3.1 2B model is downloaded from Huggingface to the $HOME/.cache/llx/models directory.  If you wish to store the model in an alternate location, maybe to use an external SSD for large model files, you can change the location by setting the `LLX_MODELS_DIR` environment variable to an alternate path.
