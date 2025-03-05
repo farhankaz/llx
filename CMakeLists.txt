@@ -36,7 +36,7 @@ set(BUILD_TARGET "native")
 
 # Configure build info
 configure_file(
-    llama.cpp/common/build-info.cpp.in
+    ./build-info.cpp.in
     ${CMAKE_CURRENT_BINARY_DIR}/build-info.cpp
     @ONLY
 )
