@@ -35,7 +35,14 @@ llx "Create a script to backup all MySQL databases and compress them" > backup-d
 # Generates a complete backup script with error handling and logging
 
 llx "Monitor system load and alert if CPU usage exceeds 90%" 
-# Generates and executes appropriate monitoring commands
+Outputs: ```bash
+while true; do
+  cpu_load=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}')
+  if [ "$cpu_load" -gt 90 ]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): CPU usage is at $(bc -l <<< "90 + ($cpu_load / 2)")%" > alert.log
+    mail -s "CPU Usage Alert" user@example.com < alert.log
+  fi
+done
 
 # Show version
 llx --version
